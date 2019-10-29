@@ -166,6 +166,7 @@ int main(int argc, char **argv)
 */
 void eval(char *cmdline) 
 {
+    if (!strcmp(cmdline, "quit\n")) exit(0);
     return;
 }
 
