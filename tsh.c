@@ -163,10 +163,14 @@ int main(int argc, char **argv)
  * each child process must have a unique process group ID so that our
  * background children don't receive SIGINT (SIGTSTP) from the kernel
  * when we type ctrl-c (ctrl-z) at the keyboard.  
-*/
+ */
 void eval(char *cmdline) 
 {
-    if (!strcmp(cmdline, "quit\n")) exit(0);
+    char** arguments = malloc(MAXARGS);
+    parseline(cmdline, arguments);
+
+    if (!strcmp(arguments[0], "quit") && !arguments[1]) exit(0);
+
     return;
 }
 
