@@ -166,10 +166,9 @@ int main(int argc, char **argv)
  */
 void eval(char *cmdline) 
 {
-    char** arguments = malloc(MAXARGS);
-    parseline(cmdline, arguments);
-
-    if (!strcmp(arguments[0], "quit") && !arguments[1]) exit(0);
+    char** argv = malloc(MAXARGS);
+    parseline(cmdline, argv);
+    builtin_cmd(argv);
 
     return;
 }
@@ -237,6 +236,9 @@ int parseline(const char *cmdline, char **argv)
  */
 int builtin_cmd(char **argv) 
 {
+    // Quit
+    if (!strcmp(argv[0], "quit") && !argv[1]) exit(0);
+
     return 0;     /* not a builtin command */
 }
 
