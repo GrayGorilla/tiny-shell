@@ -167,8 +167,53 @@ int main(int argc, char **argv)
 void eval(char *cmdline) 
 {
     char** argv = malloc(MAXARGS);
-    parseline(cmdline, argv);
-    builtin_cmd(argv);
+    /* short bg = */ parseline(cmdline, argv);
+    pid_t pid;
+    int childStatus;
+    // Not built-in command
+    if (!builtin_cmd(argv)) {
+        // Background job
+ /*        if (bg) {
+            // Child
+            if ((pid = fork()) == 0) {
+                if (execve(argv[0], argv, environ)) {
+                    printf("%s: command not found\n", argv[0]);
+                    exit(1);
+                }
+                else {
+                    exit(0);
+                }
+            // Parent
+            } else {
+                // Successful execution
+                if (WIFEXITED(childStatus)) {
+                    addjob(jobs, pid, BG, cmdline);
+                    printf("Job added\n");
+                // Unsuccssful execution
+                } else {
+                }
+            }
+        
+        // Foreground job
+        } else { */
+            // Child
+            if ((pid = fork()) == 0) {
+                if (execve(argv[0], argv, environ)) exit(1);
+                else exit(0);
+            // Parent
+            } else {
+                wait(&childStatus);
+                // Successful execution
+                if (!childStatus) {
+                    addjob(jobs, pid, BG, cmdline);
+                    printf("Job added\n");
+                // Unsuccssful execution
+                } else {
+                    printf("%s: command not found\n", argv[0]);
+                }
+            }
+ //       }
+    }
 
     return;
 }
@@ -236,8 +281,15 @@ int parseline(const char *cmdline, char **argv)
  */
 int builtin_cmd(char **argv) 
 {
-    // Quit
+    // "quit" command
     if (!strcmp(argv[0], "quit") && !argv[1]) exit(0);
+
+    // "jobs" command
+    if (!strcmp(argv[0], "jobs")) {
+        printf("Listing jobs...\n");
+        listjobs(jobs);
+        return 1;
+    }
 
     return 0;     /* not a builtin command */
 }
