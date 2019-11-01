@@ -166,36 +166,37 @@ int main(int argc, char **argv)
  */
 void eval(char *cmdline) 
 {
+    // No input
+    if (cmdline[0] == '\n') return;
+    
     char** argv = malloc(MAXARGS);
-    /* short bg = */ parseline(cmdline, argv);
+    short bg = parseline(cmdline, argv);
     pid_t pid;
     int childStatus;
+    
     // Not built-in command
     if (!builtin_cmd(argv)) {
         // Background job
- /*        if (bg) {
+        if (bg) {
             // Child
             if ((pid = fork()) == 0) {
-                if (execve(argv[0], argv, environ)) {
-                    printf("%s: command not found\n", argv[0]);
-                    exit(1);
-                }
-                else {
-                    exit(0);
-                }
+                if (execve(argv[0], argv, environ)) exit(1);
+                else exit(0);
             // Parent
             } else {
+                waitpid(pid, &childStatus, WNOHANG);         // Doesn't wait for child
                 // Successful execution
                 if (WIFEXITED(childStatus)) {
                     addjob(jobs, pid, BG, cmdline);
                     printf("Job added\n");
                 // Unsuccssful execution
                 } else {
+                    printf("%s: command not found\n", argv[0]);
                 }
             }
         
         // Foreground job
-        } else { */
+        } else { 
             // Child
             if ((pid = fork()) == 0) {
                 if (execve(argv[0], argv, environ)) exit(1);
@@ -205,14 +206,14 @@ void eval(char *cmdline)
                 wait(&childStatus);
                 // Successful execution
                 if (!childStatus) {
-                    addjob(jobs, pid, BG, cmdline);
+                    addjob(jobs, pid, FG, cmdline);
                     printf("Job added\n");
                 // Unsuccssful execution
                 } else {
                     printf("%s: command not found\n", argv[0]);
                 }
             }
- //       }
+        }
     }
 
     return;
