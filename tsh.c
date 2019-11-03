@@ -170,37 +170,38 @@ void eval(char *cmdline)
     if (cmdline[0] == '\n') return;
 
     char** argv = malloc(MAXARGS);
-    short bg = parseline(cmdline, argv);
+    int childStatus, bg = parseline(cmdline, argv);
     pid_t pid;
-    int childStatus;
+    sigset_t sigSet;
     
     // Not built-in command
     if (!builtin_cmd(argv)) {
+
         // Forking Error
         if ((pid = fork()) < 0) {
             perror("fork");
             exit(1);
         // Child
         } else if (pid == 0) {
-            if (execve(argv[0], argv, environ)) { printf("Exit 1\n"); exit(1); }
-            else { printf("Exit 0\n"); exit(0); }
+            // Block SIGCHLD from executing before parent adds job
+            sigemptyset(&sigSet);
+            sigaddset(&sigSet, SIGCHLD);
+            sigprocmask(SIG_BLOCK, &sigSet, NULL);
+            if (execve(argv[0], argv, environ)) { printf("Stop sending nonsense.\n"); exit(1); }
+            else exit(0);
         // Parent
         } else {
             // Background job
             if (bg) {
-                waitpid(pid, &childStatus, WNOHANG);         // Doesn't wait for child
-                // Successful execution
-                if (WIFEXITED(childStatus)) {
-                    addjob(jobs, pid, BG, cmdline);
-                // Unsuccssful execution
-                } else {
-                    printf("%s: command not found\n", argv[0]);
-                }
+                /* waitpid(pid, &childStatus, WNOHANG); */         // Doesn't wait for child
+                // Execution (successful or not)
+                addjob(jobs, pid, BG, cmdline);
+                sigprocmask(SIG_UNBLOCK, &sigSet, NULL);
             // Foreground job
             } else {
                 waitpid(pid, &childStatus, 0);
                 // Unsuccessful execution
-                if (childStatus) {
+                if (WEXITSTATUS(childStatus)) {
                     printf("%s: command not found\n", argv[0]);
                 }
             }
@@ -282,14 +283,24 @@ int builtin_cmd(char **argv)
     }
 
     // "kill" command
-     else if (!strcmp(argv[0], "kill")) {
-        // TODO: stop process
-        int jid = atoi(argv[1]);
-        struct job_t* reapedJob = getjobjid(jobs, jid);
-        // Quits job
-        Signal(SIGQUIT, sigquit_handler); 
-        deletejob(jobs, reapedJob->pid);
-        printf("Job [%d] killed\n", jid);
+    else if (!strcmp(argv[0], "kill")) {
+        int jid, pid;
+        // By Job ID
+        if (argv[1][0] == '%') {
+            jid = atoi(argv[1]);
+            jid++;                  // Ignore the '%' character
+            struct job_t* reapedJob = getjobjid(jobs, jid);
+            kill(reapedJob->pid, SIGINT);
+            deletejob(jobs, reapedJob->jid);
+            printf("Job [%d] killed\n", jid);
+        // By Process ID
+        } else {
+            pid = atoi(argv[1]);
+            struct job_t* reapedJob = getjobpid(jobs, pid);
+            kill(pid, SIGINT);
+            deletejob(jobs, reapedJob->pid);
+            printf("Process [%d] killed\n", pid);
+        }
     }
 
     // "fg & bg" commands
@@ -327,7 +338,10 @@ int waitfg(pid_t pid)
  */
 void sigchld_handler(int sig) 
 {
-    printf("\nsigCHILD with signal number {%d}\n", sig);
+    int childStatus;
+    pid_t pid = wait(&childStatus);
+    printf("\nsigCHILD with signal number {%d}, and pid (%d)\n", sig, pid);
+    if (deletejob(jobs, pid)) printf("Sucessfully deleted job with pid: %d\n", pid);
     return;
 }
 
