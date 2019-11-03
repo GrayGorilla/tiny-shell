@@ -168,7 +168,7 @@ void eval(char *cmdline)
 {
     // No input
     if (cmdline[0] == '\n') return;
-    
+
     char** argv = malloc(MAXARGS);
     short bg = parseline(cmdline, argv);
     pid_t pid;
@@ -176,46 +176,36 @@ void eval(char *cmdline)
     
     // Not built-in command
     if (!builtin_cmd(argv)) {
-        // Background job
-        if (bg) {
-            // Child
-            if ((pid = fork()) == 0) {
-                if (execve(argv[0], argv, environ)) exit(1);
-                else exit(0);
-            // Parent
-            } else {
+        // Forking Error
+        if ((pid = fork()) < 0) {
+            perror("fork");
+            exit(1);
+        // Child
+        } else if (pid == 0) {
+            if (execve(argv[0], argv, environ)) { printf("Exit 1\n"); exit(1); }
+            else { printf("Exit 0\n"); exit(0); }
+        // Parent
+        } else {
+            // Background job
+            if (bg) {
                 waitpid(pid, &childStatus, WNOHANG);         // Doesn't wait for child
                 // Successful execution
                 if (WIFEXITED(childStatus)) {
                     addjob(jobs, pid, BG, cmdline);
-                    printf("Job added\n");
                 // Unsuccssful execution
                 } else {
                     printf("%s: command not found\n", argv[0]);
                 }
-            }
-        
-        // Foreground job
-        } else { 
-            // Child
-            if ((pid = fork()) == 0) {
-                if (execve(argv[0], argv, environ)) exit(1);
-                else exit(0);
-            // Parent
+            // Foreground job
             } else {
-                wait(&childStatus);
-                // Successful execution
-                if (!childStatus) {
-                    addjob(jobs, pid, FG, cmdline);
-                    printf("Job added\n");
-                // Unsuccssful execution
-                } else {
+                waitpid(pid, &childStatus, 0);
+                // Unsuccessful execution
+                if (childStatus) {
                     printf("%s: command not found\n", argv[0]);
                 }
             }
         }
     }
-
     return;
 }
 
@@ -286,11 +276,24 @@ int builtin_cmd(char **argv)
     if (!strcmp(argv[0], "quit") && !argv[1]) exit(0);
 
     // "jobs" command
-    if (!strcmp(argv[0], "jobs")) {
-        printf("Listing jobs...\n");
+    else if (!strcmp(argv[0], "jobs")) {
         listjobs(jobs);
         return 1;
     }
+
+    // "kill" command
+     else if (!strcmp(argv[0], "kill")) {
+        // TODO: stop process
+        int jid = atoi(argv[1]);
+        struct job_t* reapedJob = getjobjid(jobs, jid);
+        // Quits job
+        Signal(SIGQUIT, sigquit_handler); 
+        deletejob(jobs, reapedJob->pid);
+        printf("Job [%d] killed\n", jid);
+    }
+
+    // "fg & bg" commands
+    // TODO: ^
 
     return 0;     /* not a builtin command */
 }
@@ -324,6 +327,7 @@ int waitfg(pid_t pid)
  */
 void sigchld_handler(int sig) 
 {
+    printf("\nsigCHILD with signal number {%d}\n", sig);
     return;
 }
 
@@ -334,6 +338,7 @@ void sigchld_handler(int sig)
  */
 void sigint_handler(int sig) 
 {
+    printf("\nsigINT with signal number {%d}\n", sig);
     return;
 }
 
@@ -344,6 +349,7 @@ void sigint_handler(int sig)
  */
 void sigtstp_handler(int sig) 
 {
+    printf("\nsigSTOP with signal number {%d}\n", sig);
     return;
 }
 
