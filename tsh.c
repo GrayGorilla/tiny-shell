@@ -285,24 +285,33 @@ int builtin_cmd(char **argv)
     // "kill" command
     else if (!strcmp(argv[0], "kill")) {
         int jid, pid;
+        // Print usage tip if no ID specified
+        if (!argv[1]) {
+            printf("Usage: kill <n> | kill %%<n>\n");
         // By Job ID
-        if (argv[1][0] == '%') {
-            jid = atoi(argv[1]);
-            jid++;                  // Ignore the '%' character
+        } else if (argv[1][0] == '%') {
+            char* jidString = argv[1] + 1;      // Ignore the '%' character
+            jid = atoi(jidString);
             struct job_t* reapedJob = getjobjid(jobs, jid);
-            kill(reapedJob->pid, SIGINT);
-            deletejob(jobs, reapedJob->jid);
-            printf("Job [%d] killed\n", jid);
+            // Check if job exists
+            if (reapedJob) {
+                kill(reapedJob->pid, SIGINT);
+                deletejob(jobs, reapedJob->jid);
+                printf("Job [%d] killed\n", jid);
+            }
         // By Process ID
-        } else {
+        } else if (argv[1][0]) {
             pid = atoi(argv[1]);
             struct job_t* reapedJob = getjobpid(jobs, pid);
-            kill(pid, SIGINT);
-            deletejob(jobs, reapedJob->pid);
-            printf("Process [%d] killed\n", pid);
+            // Check if job exists
+            if (reapedJob) {
+                kill(pid, SIGINT);
+                deletejob(jobs, reapedJob->pid);
+                printf("Process [%d] killed\n", pid);
+            }
+            return 1;
         }
     }
-
     // "fg & bg" commands
     // TODO: ^
 
