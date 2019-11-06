@@ -55,9 +55,6 @@ struct job_t jobs[MAXJOBS]; /* The job list */
 
 /* Function prototypes */
 
-int bg(struct job_t* job);
-int fg(struct job_t* job);
-
 /* Here are the functions that you will implement */
 void eval(char *cmdline);
 int builtin_cmd(char **argv);
@@ -210,17 +207,6 @@ void eval(char *cmdline)
                 addjob(jobs, pid, FG, cmdline);
                 sigprocmask(SIG_UNBLOCK, &sigSet, NULL);
                 waitpid(pid, &childStatus, WUNTRACED);              // Waits for foreground proccess (child)
-                // Check if stopped
-                if (WIFSTOPPED(childStatus)) {
-                    printf("(%d) stopped with status: %d\n", pid, childStatus);
-                // Successful execution
-                } else if (WIFEXITED(childStatus)) {
-                    int exitStatus = WEXITSTATUS(childStatus);
-                    printf("Child status successful? %d\n", exitStatus);
-                // Unsuccessful execution
-                } else {
-                    printf("%s: command not found (parent)\n", argv[0]);
-                }
             }
         }
     }
@@ -315,7 +301,9 @@ int builtin_cmd(char **argv)
             if (reapedJob) {
                 kill(-reapedJob->pid, SIGINT);
                 deletejob(jobs, reapedJob->jid);
-                printf("Job [%d] killed\n", jid);
+                printf("Job [%d] killed (sig no.: %d)\n", jid, SIGINT);
+            } else {
+                printf("%s: No such job\n", argv[1]);
             }
         // By Process ID
         } else if (argv[1][0]) {
@@ -325,13 +313,18 @@ int builtin_cmd(char **argv)
             if (reapedJob) {
                 kill(-pid, SIGINT);
                 deletejob(jobs, reapedJob->pid);
-                printf("Process [%d] killed\n", pid);
+                printf("Process [%d] killed (sig no.: %d)\n", pid, SIGINT);
+            } else {
+                printf("%s: No such process\n", argv[1]);
             }
         }
         return 1;
     }
     // "fg & bg" commands
-    // TODO: ^
+    else if (!strcmp(argv[0], "fg") || !strcmp(argv[0], "bg")) {
+        do_bgfg(argv);
+        return 1;
+    }
 
     return 0;     /* not a builtin command */
 }
@@ -341,51 +334,56 @@ int builtin_cmd(char **argv)
  */
 void do_bgfg(char **argv) 
 {
-    int jid/* , fd = fileno("./tsh") */;
-    pid_t fgPid, pid;
-    if (!strcmp(argv[0], "fg")) {
-        // TODO: move background job to foreground
-    } else if (!strcmp(argv[0], "bg")) {
-        fgPid = fgpid(jobs);
+    // Initialize to 0
+    int jid = 0;
+    pid_t pid = 0;
+    struct job_t* job;
 
-        // Print usage tip if no ID specified
-        if (!argv[1]) {
-            printf("Usage: bg <n> | bg %%<n>\n");
+    // Print usage tip if no ID specified
+    if (!argv[1]) {
+        printf("Usage: bg <n> | fg %%<n>\n");
+        return;
+    // Get Job ID
+    } else if (argv[1][0] == '%') {
+        char* jidString = argv[1] + 1;      // Ignore the '%' character
+        jid = atoi(jidString);
+        job = getjobjid(jobs, jid);
+    // Get Process ID
+    } else {
+        pid = atoi(argv[1]);
+        job = getjobpid(jobs, pid);
+    }
+
+    // Foreground command
+    if (!strcmp(argv[0], "fg")) {
+        job->state = FG;
         // By Job ID
-        } else if (argv[1][0] == '%') {
-            char* jidString = argv[1] + 1;      // Ignore the '%' character
-            jid = atoi(jidString);
-            struct job_t* job = getjobjid(jobs, jid);
-            // Check if job exists
-            if (job) {
-                bg(job);
-            }
+        if (jid) {
+            kill(-job->pid, SIGCONT);
+            waitfg(job->pid);
         // By Process ID
-        } else if (argv[1][0]) {
-            pid = atoi(argv[1]);
-            struct job_t* job = getjobpid(jobs, pid);
-            // Check if job exists
-            if (job) {
-                kill(-pid, SIGINT);
-                deletejob(jobs, job->pid);
-                printf("Process [%d] killed\n", pid);
-            }
+        } else if (pid) {
+            kill(-pid, SIGCONT);
+            waitfg(pid);
+        // Error check
+        } else {
+            printf("Error: invalid process ID\n");
+        }
+    // Background command
+    } else if (!strcmp(argv[0], "bg")) {
+        job->state = BG;
+        // By Job ID
+        if (jid) {
+            kill(-job->pid, SIGCONT);
+        // By Process ID
+        } else if (pid) {
+            kill(-pid, SIGCONT);
+        // Error check
+        } else {
+            printf("Error: invalid process ID\n");
         }
     }
     return;
-}
-
-int bg(struct job_t* job) {
-    // Perror if unsuccessful SIGCONT
-    if (kill(-job->pid, SIGCONT) < 0) {
-        perror("kill(SIGCONT)");
-        return -1;
-    }
-    job->state = BG;
-    job->pid = setsid();
-    printf("Job [%d] moved to background\n", job->jid);
-
-    return 0;
 }
 
 /* 
@@ -393,7 +391,17 @@ int bg(struct job_t* job) {
  */
 int waitfg(pid_t pid)
 {
-    return 0;
+    //struct job_t* job = getjobpid(jobs, pid);
+    waitpid(pid, NULL, 0);
+    // Loop infinitly until job is complete
+/*     for (int i = 0;; i++) {
+        if (i % 1000000000 == 0)
+        printf("i = %d\n", i);
+        if (job == NULL) {
+            return 1;
+        }
+    }
+ */    return 0;
 }
 
 /*****************
@@ -411,9 +419,9 @@ void sigchld_handler(int sig)
 {
     int childStatus;
     pid_t pid = waitpid( -1, &childStatus, WNOHANG);
-    // Check if delete successful
-    if (pid && deletejob(jobs, pid)) {
-        printf("Completed job with pid: %d\n", pid);
+    // Check pid
+    if (pid) {
+        deletejob(jobs, pid);
     }
     return;
 }
@@ -429,7 +437,7 @@ void sigint_handler(int sig)
     // Check if delete successful
     if (fgPid && deletejob(jobs, fgPid)) {
         kill(-fgPid, SIGINT);
-        printf("\nEnded job with fgPid: %d\n", fgPid);
+        printf("\nEnded job (sig no.: %d) with fgPid: %d\n", sig, fgPid);
     }
     return;
 }
@@ -447,7 +455,7 @@ void sigtstp_handler(int sig)
     if (stoppedJob) {
         stoppedJob->state = ST;
         kill(-fgPid, SIGTSTP);
-        printf("Stopped job with fgPid: %d\n", fgPid);    
+        printf("\nStopped job (sig no.: %d) with fgPid: %d\n", sig, fgPid);    
     }
     return;
 }
